@@ -166,8 +166,6 @@ class HitDump : public edm::EDAnalyzer
   /// Private methods and variables
   private:
 
-    edm::InputTag L1TkTrackletCollInputTag;
-    
     bool testedGeometry;
     bool debugPrintouts;
 
@@ -211,7 +209,6 @@ HitDump::HitDump(edm::ParameterSet const& iConfig) :
   config(iConfig)
 {
   /// Insert here what you need to initialize
-  L1TkTrackletCollInputTag = iConfig.getParameter< edm::InputTag >("L1TkTrackletCollType");
   fileString_ = iConfig.getUntrackedParameter<string>("fileString","ForUlrich.txt");
 }
 
@@ -333,9 +330,6 @@ void HitDump::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
   edm::Handle<L1TkTrack_PixelDigi_Collection>    pixelDigiL1TkTrackHandle;
   iEvent.getByLabel("L1TkClustersFromPixelDigis", pixelDigiL1TkClusterHandle);
   iEvent.getByLabel("L1TkStubsFromPixelDigis","StubsPass",    pixelDigiL1TkStubHandle);
-  //iEvent.getByLabel("L1TkTrackletsFromPixelDigis", "ShortTrackletsVtx00HelFit", pixelDigiL1TkTrackletHandle);
-  //iEvent.getByLabel( L1TkTrackletCollInputTag, pixelDigiL1TkTrackletHandle);
-  //iEvent.getByLabel("L1TkTracksFromPixelDigis",    "Level1TracksHelFitVtxYes", pixelDigiL1TkTrackHandle);
 
   // dump map between inner and outer modules
 
@@ -475,6 +469,67 @@ void HitDump::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
 
   // End loop over L1TkClusters
 
+  /*
+  /// Loop over SimTracks and printout digis matched to track
+  for ( iterSimTracks = simTrackHandle->begin();
+	iterSimTracks != simTrackHandle->end();
+	++iterSimTracks ) {
+
+    cout << "Simtrack "<<iterSimTracks->trackId()<<" "<<iterSimTracks->momentum().pt()
+	 <<" "<<iterSimTracks->momentum().phi()<<" "<<iterSimTracks->momentum().eta()<<endl;
+
+    DetSetVector<PixelDigi>::const_iterator iterDet;
+    for ( iterDet = pixelDigiHandle->begin();
+	  iterDet != pixelDigiHandle->end();
+	  iterDet++ ) {
+
+      DetId tkId( iterDet->id );
+      StackedTrackerDetId stdetid(tkId);
+      /// Check if it is Pixel
+      if ( tkId.subdetId() == 2 ) {
+      
+	PXFDetId pxfId(tkId);
+	DetSetVector<PixelDigiSimLink>::const_iterator itDigiSimLink1=pixelDigiSimLinkHandle->find(pxfId.rawId());
+	if (itDigiSimLink1!=pixelDigiSimLinkHandle->end()){
+	  DetSet<PixelDigiSimLink> digiSimLink = *itDigiSimLink1;
+	  DetSet<PixelDigiSimLink>::const_iterator iterSimLink;
+
+	  DetSet<PixelDigi>::const_iterator iterDigi;
+	  for ( iterDigi = iterDet->data.begin();
+		iterDigi != iterDet->data.end();
+		iterDigi++ ) {
+
+	    for ( iterSimLink = digiSimLink.data.begin();
+		  iterSimLink != digiSimLink.data.end();
+		  iterSimLink++) {
+	    
+	      /// When the channel is the same, the link is found
+	      if ( (int)iterSimLink->channel() == iterDigi->channel() ) {
+		/// Map wrt SimTrack Id
+		unsigned int simTrackId = iterSimLink->SimTrackId();
+		unsigned int simEventId = iterSimLink->eventId().event();
+                int BX = iterSimLink->eventId().bunchCrossing();  
+		if (simTrackId==iterSimTracks->trackId()) {
+
+		  const GeomDetUnit* gDetUnit = theGeometry->idToDetUnit( tkId );
+		  MeasurementPoint mp( iterDigi->row() + 0.5, iterDigi->column() + 0.5 );
+		  GlobalPoint pdPos = gDetUnit->surface().toGlobal( gDetUnit->topology().localPosition( mp ) ) ;
+		  
+		  cout << "Digi " << simEventId<<" "<<BX<<" "<<pdPos.x() << " "
+		       << pdPos.y() << " "
+		       << pdPos.z() << endl;
+		}
+	      }
+	    }
+	  }
+	}
+      }
+    }
+  } /// End of Loop over SimTracks
+  */
+
+
+
   /// Loop over Detector Modules
   DetSetVector<PixelDigi>::const_iterator iterDet;
   for ( iterDet = pixelDigiHandle->begin();
@@ -531,12 +586,15 @@ void HitDump::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
 
 	  assert(pxfId.panel()==1);
 
+	  int blade=9999999;
+	  //cout << "blade = "<<blade<<endl;
+
 	  if (myfile.is_open()) {
 	    myfile << "Digi: " 
 		   << offset+disk << "\t" 
 		   << iterDigi->row() << "\t" 
 		   << iterDigi->column() << "\t" 
-		   << pxfId.blade() << "\t" 
+		   << blade << "\t" 
 		   << pxfId.panel() << "\t" 
 	      //     << stdetid.iPhi() << "\t" 
 		   << pxfId.module() << "\t" 
@@ -552,8 +610,10 @@ void HitDump::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
 		iterSimLink != digiSimLink.data.end();
 		iterSimLink++) {
 	    
-	    /// When the channel is the same, the link is found
-	    if ( (int)iterSimLink->channel() == iterDigi->channel() ) {
+	    /// When the channel is the same, the link is found and right event and BX
+	    if ( (int)iterSimLink->channel() == iterDigi->channel() &&
+                 iterSimLink->eventId().event()==0 &&
+		 iterSimLink->eventId().bunchCrossing()==0 ) {
 	      
 	      /// Map wrt SimTrack Id
 	      unsigned int simTrackId = iterSimLink->SimTrackId();
@@ -623,7 +683,9 @@ void HitDump::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
 	      iterSimLink++) {
 	  
 	  /// When the channel is the same, the link is found
-	  if ( (int)iterSimLink->channel() == iterDigi->channel() ) {
+	  if ( (int)iterSimLink->channel() == iterDigi->channel() &&
+	       iterSimLink->eventId().event()==0 &&
+	       iterSimLink->eventId().bunchCrossing()==0 ) {
 	    
 	    /// Map wrt SimTrack Id
 	    unsigned int simTrackId = iterSimLink->SimTrackId();
